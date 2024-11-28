@@ -38,6 +38,15 @@ To use the SAM 2 predictor and run the example notebooks, `jupyter` and `matplot
 pip install -e ".[notebooks]"
 ```
 
+To build a docker image:
+
+```bash
+docker build -t zeyu_sam:v1 .
+
+sudo docker run -it --device /dev/tty1 --device /dev/input --privileged --gpu all -v /etc/localtime:/etc/localtime:ro -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY=$DISPLAY --shm-size 8g --device-cgroup-rule="c 81:* rmw" -e GDK_SCALE -e GDK_DPI_SCALE --network host  --ipc=host  -v /home/zeyu:/home/zeyu --name zeyu_sam bd0
+```
+
+
 Note:
 1. It's recommended to create a new Python environment via [Anaconda](https://www.anaconda.com/) for this installation and install PyTorch 2.3.1 (or higher) via `pip` following https://pytorch.org/. If you have a PyTorch version lower than 2.3.1 in your current environment, the installation command above will try to upgrade it to the latest PyTorch version using `pip`.
 2. The step above requires compiling a custom CUDA kernel with the `nvcc` compiler. If it isn't already available on your machine, please install the [CUDA toolkits](https://developer.nvidia.com/cuda-toolkit-archive) with a version that matches your PyTorch CUDA version.
