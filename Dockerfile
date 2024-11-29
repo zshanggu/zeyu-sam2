@@ -14,10 +14,9 @@ RUN apt-get update && apt-get install -y \
     git \
     libgl1-mesa-glx \
     python3.10-tk \
-    python3-tk \
     libqt5gui5 \
     libqt5core5a \
-    libqt5widgets5
+    libqt5widgets5 \
     libsm6 \
     libxext6 \
     libxrender-dev \
@@ -47,4 +46,4 @@ RUN python3 --version && pip --version
 RUN apt update && apt upgrade -y
 
 
-RUN pip install torch numpy matplotlib opencv-python
+RUN pip install torch numpy matplotlib opencv-python decord

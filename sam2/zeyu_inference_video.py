@@ -6,7 +6,10 @@ os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Button
 from PIL import Image
+from decord import VideoReader
+from decord import cpu
 
 # select the device for computation
 if torch.cuda.is_available():
@@ -63,53 +66,84 @@ def show_box(box, ax):
     ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0, 0, 0, 0), lw=2))
 
 # `video_dir` a directory of JPEG frames with filenames like `<frame_index>.jpg`
-video_dir = "../notebooks/videos/bedroom"
+video_dir = "../notebooks/videos/bedroom.mp4"
 
-# scan all the JPEG frame names in this directory
-frame_names = [
-    p for p in os.listdir(video_dir)
-    if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
-]
-frame_names.sort(key=lambda p: int(os.path.splitext(p)[0]))
+# Load the video using decord
+vr = VideoReader(video_dir, ctx=cpu(0))
+
+# Get the first frame
+frame_rgb = vr[0].asnumpy()
+
+# Convert the frame from HWC (height, width, channels) to RGB
+# frame_rgb = first_frame[..., ::-1]  # Decord loads as BGR by default
+
+# Define the callback for mouse click events
+clicked_points = []
+labels = []
+
+def on_click(event):
+    # Ignore clicks outside the axes (e.g., on the button)
+    if event.inaxes is not None and event.inaxes != finalize_button_ax:
+        x, y = int(event.xdata), int(event.ydata)
+        clicked_points.append([x, y])
+        labels.append(1)  # Assume positive click for simplicity
+        print(f"Clicked point: ({x}, {y})")
+        # Show the clicked point on the plot
+        plt.scatter(x, y, color='green', marker='*', s=200, edgecolor='white', linewidth=1.25)
+        plt.draw()
 
 # take a look the first video frame
 frame_idx = 0
-image_0 = Image.open(os.path.join(video_dir, frame_names[frame_idx]))
-image_0 = np.array(image_0.convert("RGB"))
-plt.figure(figsize=(9, 6))
-plt.title(f"frame {frame_idx}")
-plt.imshow(image_0)
-plt.axis('on')
+
+# image_0 = np.array(image_0.convert("RGB"))
+fig, ax = plt.subplots(figsize=(9, 6))
+ax.set_title(f"frame {frame_idx}")
+ax.imshow(frame_rgb)
+ax.axis('on')
+
+# Connect the click event
+cid = fig.canvas.mpl_connect('button_press_event', on_click)
+
+# Add a button to finalize points
+def finalize_points(event):
+    plt.close(fig)
+    print(f"Finalized points: {clicked_points}")
+
+finalize_button_ax = plt.axes([0.8, 0.01, 0.1, 0.05])  # Button position in the figure
+finalize_button = Button(finalize_button_ax, "Finalize")
+finalize_button.on_clicked(finalize_points)
+
 plt.show()
 
+# sys.exit()
 
 inference_state = predictor.init_state(video_path=video_dir)
 
 predictor.reset_state(inference_state)
 
-ann_frame_idx = 0  # the frame index we interact with
-ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
+# ann_frame_idx = 0  # the frame index we interact with
+# ann_obj_id = 1  # give a unique id to each object we interact with (it can be any integers)
 
-# Let's add a positive click at (x, y) = (210, 350) to get started
-points = np.array([[210, 350]], dtype=np.float32)
-# for labels, `1` means positive click and `0` means negative click
-labels = np.array([1], np.int32)
-_, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
-    inference_state=inference_state,
-    frame_idx=ann_frame_idx,
-    obj_id=ann_obj_id,
-    points=points,
-    labels=labels,
-)
+# # Let's add a positive click at (x, y) = (210, 350) to get started
+# points = np.array([[210, 350]], dtype=np.float32)
+# # for labels, `1` means positive click and `0` means negative click
+# labels = np.array([1], np.int32)
+# _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+#     inference_state=inference_state,
+#     frame_idx=ann_frame_idx,
+#     obj_id=ann_obj_id,
+#     points=points,
+#     labels=labels,
+# )
 
-# show the results on the current (interacted) frame
-plt.figure(figsize=(9, 6))
-plt.title(f"frame {ann_frame_idx}")
-plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
-show_points(points, labels, plt.gca())
-show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
-plt.axis('on')
-plt.show()
+# # show the results on the current (interacted) frame
+# plt.figure(figsize=(9, 6))
+# plt.title(f"frame {ann_frame_idx}")
+# plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
+# show_points(points, labels, plt.gca())
+# show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+# plt.axis('on')
+# plt.show()
 
 
 ann_frame_idx = 0  # the frame index we interact with
@@ -117,9 +151,12 @@ ann_obj_id = 1  # give a unique id to each object we interact with (it can be an
 
 # Let's add a 2nd positive click at (x, y) = (250, 220) to refine the mask
 # sending all clicks (and their labels) to `add_new_points_or_box`
-points = np.array([[210, 350], [250, 220]], dtype=np.float32)
+# points = np.array([[210, 350], [250, 220]], dtype=np.float32)
 # for labels, `1` means positive click and `0` means negative click
-labels = np.array([1, 1], np.int32)
+# labels = np.array([1, 1], np.int32)
+# After the interaction, use the points and labels
+points = np.array(clicked_points, dtype=np.float32)
+labels = np.array(labels, np.int32)
 _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
     inference_state=inference_state,
     frame_idx=ann_frame_idx,
@@ -131,7 +168,7 @@ _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
 # show the results on the current (interacted) frame
 plt.figure(figsize=(9, 6))
 plt.title(f"frame {ann_frame_idx}")
-plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
+plt.imshow(vr[ann_frame_idx])
 show_points(points, labels, plt.gca())
 show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
 plt.axis('on')
@@ -148,246 +185,246 @@ for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
 # render the segmentation results every few frames
 vis_frame_stride = 30
 plt.close("all")
-for out_frame_idx in range(0, len(frame_names), vis_frame_stride):
+for out_frame_idx in range(0, len(vr), vis_frame_stride):
     plt.figure(figsize=(6, 4))
     plt.title(f"frame {out_frame_idx}")
-    plt.imshow(Image.open(os.path.join(video_dir, frame_names[out_frame_idx])))
+    plt.imshow(vr[out_frame_idx])
 
     for out_obj_id, out_mask in video_segments[out_frame_idx].items():
         show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
     plt.axis('on')
     plt.show()
 
-ann_frame_idx = 150  # further refine some details on this frame
-ann_obj_id = 1  # give a unique id to the object we interact with (it can be any integers)
+# ann_frame_idx = 150  # further refine some details on this frame
+# ann_obj_id = 1  # give a unique id to the object we interact with (it can be any integers)
 
-# show the segment before further refinement
-plt.figure(figsize=(9, 6))
-plt.title(f"frame {ann_frame_idx} -- before refinement")
-plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
-show_mask(video_segments[ann_frame_idx][ann_obj_id], plt.gca(), obj_id=ann_obj_id)
-plt.axis('on')
-plt.show()
+# # show the segment before further refinement
+# plt.figure(figsize=(9, 6))
+# plt.title(f"frame {ann_frame_idx} -- before refinement")
+# plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
+# show_mask(video_segments[ann_frame_idx][ann_obj_id], plt.gca(), obj_id=ann_obj_id)
+# plt.axis('on')
+# plt.show()
 
-# Let's add a negative click on this frame at (x, y) = (82, 415) to refine the segment
-points = np.array([[82, 410]], dtype=np.float32)
-# for labels, `1` means positive click and `0` means negative click
-labels = np.array([0], np.int32)
-_, _, out_mask_logits = predictor.add_new_points_or_box(
-    inference_state=inference_state,
-    frame_idx=ann_frame_idx,
-    obj_id=ann_obj_id,
-    points=points,
-    labels=labels,
-)
+# # Let's add a negative click on this frame at (x, y) = (82, 415) to refine the segment
+# points = np.array([[82, 410]], dtype=np.float32)
+# # for labels, `1` means positive click and `0` means negative click
+# labels = np.array([0], np.int32)
+# _, _, out_mask_logits = predictor.add_new_points_or_box(
+#     inference_state=inference_state,
+#     frame_idx=ann_frame_idx,
+#     obj_id=ann_obj_id,
+#     points=points,
+#     labels=labels,
+# )
 
-# show the segment after the further refinement
-plt.figure(figsize=(9, 6))
-plt.title(f"frame {ann_frame_idx} -- after refinement")
-plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
-show_points(points, labels, plt.gca())
-show_mask((out_mask_logits > 0.0).cpu().numpy(), plt.gca(), obj_id=ann_obj_id)
-plt.axis('on')
-plt.show()
+# # show the segment after the further refinement
+# plt.figure(figsize=(9, 6))
+# plt.title(f"frame {ann_frame_idx} -- after refinement")
+# plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
+# show_points(points, labels, plt.gca())
+# show_mask((out_mask_logits > 0.0).cpu().numpy(), plt.gca(), obj_id=ann_obj_id)
+# plt.axis('on')
+# plt.show()
 
-# run propagation throughout the video and collect the results in a dict
-video_segments = {}  # video_segments contains the per-frame segmentation results
-for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
-    video_segments[out_frame_idx] = {
-        out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
-        for i, out_obj_id in enumerate(out_obj_ids)
-    }
+# # run propagation throughout the video and collect the results in a dict
+# video_segments = {}  # video_segments contains the per-frame segmentation results
+# for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
+#     video_segments[out_frame_idx] = {
+#         out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+#         for i, out_obj_id in enumerate(out_obj_ids)
+#     }
 
-# render the segmentation results every few frames
-vis_frame_stride = 30
-plt.close("all")
-for out_frame_idx in range(0, len(frame_names), vis_frame_stride):
-    plt.figure(figsize=(6, 4))
-    plt.title(f"frame {out_frame_idx}")
-    plt.imshow(Image.open(os.path.join(video_dir, frame_names[out_frame_idx])))
-    for out_obj_id, out_mask in video_segments[out_frame_idx].items():
-        show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
-    plt.axis('on')
-    plt.show()
+# # render the segmentation results every few frames
+# vis_frame_stride = 30
+# plt.close("all")
+# for out_frame_idx in range(0, len(frame_names), vis_frame_stride):
+#     plt.figure(figsize=(6, 4))
+#     plt.title(f"frame {out_frame_idx}")
+#     plt.imshow(Image.open(os.path.join(video_dir, frame_names[out_frame_idx])))
+#     for out_obj_id, out_mask in video_segments[out_frame_idx].items():
+#         show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+#     plt.axis('on')
+#     plt.show()
 
-predictor.reset_state(inference_state)
+# predictor.reset_state(inference_state)
 
-ann_frame_idx = 0  # the frame index we interact with
-ann_obj_id = 4  # give a unique id to each object we interact with (it can be any integers)
+# ann_frame_idx = 0  # the frame index we interact with
+# ann_obj_id = 4  # give a unique id to each object we interact with (it can be any integers)
 
-# Let's add a box at (x_min, y_min, x_max, y_max) = (300, 0, 500, 400) to get started
-box = np.array([300, 0, 500, 400], dtype=np.float32)
-_, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
-    inference_state=inference_state,
-    frame_idx=ann_frame_idx,
-    obj_id=ann_obj_id,
-    box=box,
-)
+# # Let's add a box at (x_min, y_min, x_max, y_max) = (300, 0, 500, 400) to get started
+# box = np.array([300, 0, 500, 400], dtype=np.float32)
+# _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+#     inference_state=inference_state,
+#     frame_idx=ann_frame_idx,
+#     obj_id=ann_obj_id,
+#     box=box,
+# )
 
-# show the results on the current (interacted) frame
-plt.figure(figsize=(9, 6))
-plt.title(f"frame {ann_frame_idx}")
-plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
-show_box(box, plt.gca())
-show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
-plt.axis('on')
-plt.show()
+# # show the results on the current (interacted) frame
+# plt.figure(figsize=(9, 6))
+# plt.title(f"frame {ann_frame_idx}")
+# plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
+# show_box(box, plt.gca())
+# show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+# plt.axis('on')
+# plt.show()
 
-ann_frame_idx = 0  # the frame index we interact with
-ann_obj_id = 4  # give a unique id to each object we interact with (it can be any integers)
+# ann_frame_idx = 0  # the frame index we interact with
+# ann_obj_id = 4  # give a unique id to each object we interact with (it can be any integers)
 
-# Let's add a positive click at (x, y) = (460, 60) to refine the mask
-points = np.array([[460, 60]], dtype=np.float32)
-# for labels, `1` means positive click and `0` means negative click
-labels = np.array([1], np.int32)
-# note that we also need to send the original box input along with
-# the new refinement click together into `add_new_points_or_box`
-box = np.array([300, 0, 500, 400], dtype=np.float32)
-_, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
-    inference_state=inference_state,
-    frame_idx=ann_frame_idx,
-    obj_id=ann_obj_id,
-    points=points,
-    labels=labels,
-    box=box,
-)
+# # Let's add a positive click at (x, y) = (460, 60) to refine the mask
+# points = np.array([[460, 60]], dtype=np.float32)
+# # for labels, `1` means positive click and `0` means negative click
+# labels = np.array([1], np.int32)
+# # note that we also need to send the original box input along with
+# # the new refinement click together into `add_new_points_or_box`
+# box = np.array([300, 0, 500, 400], dtype=np.float32)
+# _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+#     inference_state=inference_state,
+#     frame_idx=ann_frame_idx,
+#     obj_id=ann_obj_id,
+#     points=points,
+#     labels=labels,
+#     box=box,
+# )
 
-# show the results on the current (interacted) frame
-plt.figure(figsize=(9, 6))
-plt.title(f"frame {ann_frame_idx}")
-plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
-show_box(box, plt.gca())
-show_points(points, labels, plt.gca())
-show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
-plt.axis('on')
-plt.show()
+# # show the results on the current (interacted) frame
+# plt.figure(figsize=(9, 6))
+# plt.title(f"frame {ann_frame_idx}")
+# plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
+# show_box(box, plt.gca())
+# show_points(points, labels, plt.gca())
+# show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+# plt.axis('on')
+# plt.show()
 
-# run propagation throughout the video and collect the results in a dict
-video_segments = {}  # video_segments contains the per-frame segmentation results
-for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
-    video_segments[out_frame_idx] = {
-        out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
-        for i, out_obj_id in enumerate(out_obj_ids)
-    }
+# # run propagation throughout the video and collect the results in a dict
+# video_segments = {}  # video_segments contains the per-frame segmentation results
+# for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
+#     video_segments[out_frame_idx] = {
+#         out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+#         for i, out_obj_id in enumerate(out_obj_ids)
+#     }
 
-# render the segmentation results every few frames
-vis_frame_stride = 30
-plt.close("all")
-for out_frame_idx in range(0, len(frame_names), vis_frame_stride):
-    plt.figure(figsize=(6, 4))
-    plt.title(f"frame {out_frame_idx}")
-    plt.imshow(Image.open(os.path.join(video_dir, frame_names[out_frame_idx])))
-    for out_obj_id, out_mask in video_segments[out_frame_idx].items():
-        show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
-    plt.axis('on')
-    plt.show()
+# # render the segmentation results every few frames
+# vis_frame_stride = 30
+# plt.close("all")
+# for out_frame_idx in range(0, len(frame_names), vis_frame_stride):
+#     plt.figure(figsize=(6, 4))
+#     plt.title(f"frame {out_frame_idx}")
+#     plt.imshow(Image.open(os.path.join(video_dir, frame_names[out_frame_idx])))
+#     for out_obj_id, out_mask in video_segments[out_frame_idx].items():
+#         show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+#     plt.axis('on')
+#     plt.show()
 
-predictor.reset_state(inference_state)
+# predictor.reset_state(inference_state)
 
-prompts = {}  # hold all the clicks we add for visualization
+# prompts = {}  # hold all the clicks we add for visualization
 
-ann_frame_idx = 0  # the frame index we interact with
-ann_obj_id = 2  # give a unique id to each object we interact with (it can be any integers)
+# ann_frame_idx = 0  # the frame index we interact with
+# ann_obj_id = 2  # give a unique id to each object we interact with (it can be any integers)
 
-# Let's add a positive click at (x, y) = (200, 300) to get started on the first object
-points = np.array([[200, 300]], dtype=np.float32)
-# for labels, `1` means positive click and `0` means negative click
-labels = np.array([1], np.int32)
-prompts[ann_obj_id] = points, labels
-_, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
-    inference_state=inference_state,
-    frame_idx=ann_frame_idx,
-    obj_id=ann_obj_id,
-    points=points,
-    labels=labels,
-)
+# # Let's add a positive click at (x, y) = (200, 300) to get started on the first object
+# points = np.array([[200, 300]], dtype=np.float32)
+# # for labels, `1` means positive click and `0` means negative click
+# labels = np.array([1], np.int32)
+# prompts[ann_obj_id] = points, labels
+# _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+#     inference_state=inference_state,
+#     frame_idx=ann_frame_idx,
+#     obj_id=ann_obj_id,
+#     points=points,
+#     labels=labels,
+# )
 
-# show the results on the current (interacted) frame
-plt.figure(figsize=(9, 6))
-plt.title(f"frame {ann_frame_idx}")
-plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
-show_points(points, labels, plt.gca())
-for i, out_obj_id in enumerate(out_obj_ids):
-    show_points(*prompts[out_obj_id], plt.gca())
-    show_mask((out_mask_logits[i] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_id)
-    plt.axis('on')
-    plt.show()
+# # show the results on the current (interacted) frame
+# plt.figure(figsize=(9, 6))
+# plt.title(f"frame {ann_frame_idx}")
+# plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
+# show_points(points, labels, plt.gca())
+# for i, out_obj_id in enumerate(out_obj_ids):
+#     show_points(*prompts[out_obj_id], plt.gca())
+#     show_mask((out_mask_logits[i] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_id)
+#     plt.axis('on')
+#     plt.show()
 
-# add the first object
-ann_frame_idx = 0  # the frame index we interact with
-ann_obj_id = 2  # give a unique id to each object we interact with (it can be any integers)
+# # add the first object
+# ann_frame_idx = 0  # the frame index we interact with
+# ann_obj_id = 2  # give a unique id to each object we interact with (it can be any integers)
 
-# Let's add a 2nd negative click at (x, y) = (275, 175) to refine the first object
-# sending all clicks (and their labels) to `add_new_points_or_box`
-points = np.array([[200, 300], [275, 175]], dtype=np.float32)
-# for labels, `1` means positive click and `0` means negative click
-labels = np.array([1, 0], np.int32)
-prompts[ann_obj_id] = points, labels
-_, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
-    inference_state=inference_state,
-    frame_idx=ann_frame_idx,
-    obj_id=ann_obj_id,
-    points=points,
-    labels=labels,
-)
+# # Let's add a 2nd negative click at (x, y) = (275, 175) to refine the first object
+# # sending all clicks (and their labels) to `add_new_points_or_box`
+# points = np.array([[200, 300], [275, 175]], dtype=np.float32)
+# # for labels, `1` means positive click and `0` means negative click
+# labels = np.array([1, 0], np.int32)
+# prompts[ann_obj_id] = points, labels
+# _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+#     inference_state=inference_state,
+#     frame_idx=ann_frame_idx,
+#     obj_id=ann_obj_id,
+#     points=points,
+#     labels=labels,
+# )
 
-# show the results on the current (interacted) frame
-plt.figure(figsize=(9, 6))
-plt.title(f"frame {ann_frame_idx}")
-plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
-show_points(points, labels, plt.gca())
-for i, out_obj_id in enumerate(out_obj_ids):
-    show_points(*prompts[out_obj_id], plt.gca())
-    show_mask((out_mask_logits[i] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_id)
-    plt.axis('on')
-    plt.show()
+# # show the results on the current (interacted) frame
+# plt.figure(figsize=(9, 6))
+# plt.title(f"frame {ann_frame_idx}")
+# plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
+# show_points(points, labels, plt.gca())
+# for i, out_obj_id in enumerate(out_obj_ids):
+#     show_points(*prompts[out_obj_id], plt.gca())
+#     show_mask((out_mask_logits[i] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_id)
+#     plt.axis('on')
+#     plt.show()
 
-ann_frame_idx = 0  # the frame index we interact with
-ann_obj_id = 3  # give a unique id to each object we interact with (it can be any integers)
+# ann_frame_idx = 0  # the frame index we interact with
+# ann_obj_id = 3  # give a unique id to each object we interact with (it can be any integers)
 
-# Let's now move on to the second object we want to track (giving it object id `3`)
-# with a positive click at (x, y) = (400, 150)
-points = np.array([[400, 150]], dtype=np.float32)
-# for labels, `1` means positive click and `0` means negative click
-labels = np.array([1], np.int32)
-prompts[ann_obj_id] = points, labels
+# # Let's now move on to the second object we want to track (giving it object id `3`)
+# # with a positive click at (x, y) = (400, 150)
+# points = np.array([[400, 150]], dtype=np.float32)
+# # for labels, `1` means positive click and `0` means negative click
+# labels = np.array([1], np.int32)
+# prompts[ann_obj_id] = points, labels
 
-# `add_new_points_or_box` returns masks for all objects added so far on this interacted frame
-_, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
-    inference_state=inference_state,
-    frame_idx=ann_frame_idx,
-    obj_id=ann_obj_id,
-    points=points,
-    labels=labels,
-)
+# # `add_new_points_or_box` returns masks for all objects added so far on this interacted frame
+# _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+#     inference_state=inference_state,
+#     frame_idx=ann_frame_idx,
+#     obj_id=ann_obj_id,
+#     points=points,
+#     labels=labels,
+# )
 
-# show the results on the current (interacted) frame on all objects
-plt.figure(figsize=(9, 6))
-plt.title(f"frame {ann_frame_idx}")
-plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
-show_points(points, labels, plt.gca())
-for i, out_obj_id in enumerate(out_obj_ids):
-    show_points(*prompts[out_obj_id], plt.gca())
-    show_mask((out_mask_logits[i] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_id)
-    plt.axis('on')
-    plt.show()
+# # show the results on the current (interacted) frame on all objects
+# plt.figure(figsize=(9, 6))
+# plt.title(f"frame {ann_frame_idx}")
+# plt.imshow(Image.open(os.path.join(video_dir, frame_names[ann_frame_idx])))
+# show_points(points, labels, plt.gca())
+# for i, out_obj_id in enumerate(out_obj_ids):
+#     show_points(*prompts[out_obj_id], plt.gca())
+#     show_mask((out_mask_logits[i] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_id)
+#     plt.axis('on')
+#     plt.show()
 
-# run propagation throughout the video and collect the results in a dict
-video_segments = {}  # video_segments contains the per-frame segmentation results
-for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
-    video_segments[out_frame_idx] = {
-        out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
-        for i, out_obj_id in enumerate(out_obj_ids)
-    }
+# # run propagation throughout the video and collect the results in a dict
+# video_segments = {}  # video_segments contains the per-frame segmentation results
+# for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
+#     video_segments[out_frame_idx] = {
+#         out_obj_id: (out_mask_logits[i] > 0.0).cpu().numpy()
+#         for i, out_obj_id in enumerate(out_obj_ids)
+#     }
 
-# render the segmentation results every few frames
-vis_frame_stride = 30
-plt.close("all")
-for out_frame_idx in range(0, len(frame_names), vis_frame_stride):
-    plt.figure(figsize=(6, 4))
-    plt.title(f"frame {out_frame_idx}")
-    plt.imshow(Image.open(os.path.join(video_dir, frame_names[out_frame_idx])))
-    for out_obj_id, out_mask in video_segments[out_frame_idx].items():
-        show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
-    plt.axis('on')
-    plt.show()
+# # render the segmentation results every few frames
+# vis_frame_stride = 30
+# plt.close("all")
+# for out_frame_idx in range(0, len(frame_names), vis_frame_stride):
+#     plt.figure(figsize=(6, 4))
+#     plt.title(f"frame {out_frame_idx}")
+#     plt.imshow(Image.open(os.path.join(video_dir, frame_names[out_frame_idx])))
+#     for out_obj_id, out_mask in video_segments[out_frame_idx].items():
+#         show_mask(out_mask, plt.gca(), obj_id=out_obj_id)
+#     plt.axis('on')
+#     plt.show()
