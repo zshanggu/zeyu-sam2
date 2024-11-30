@@ -66,7 +66,7 @@ def show_box(box, ax):
     ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0, 0, 0, 0), lw=2))
 
 # `video_dir` a directory of JPEG frames with filenames like `<frame_index>.jpg`
-video_dir = "../notebooks/videos/bedroom.mp4"
+video_dir = "../notebooks/videos/failed.mp4"
 
 # Load the video using decord
 vr = VideoReader(video_dir, ctx=cpu(0))
