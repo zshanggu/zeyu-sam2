@@ -13,7 +13,6 @@ RUN apt-get update && apt-get install -y \
     x11-apps \
     git \
     libgl1-mesa-glx \
-    python3.10-tk \
     libqt5gui5 \
     libqt5core5a \
     libqt5widgets5 \
@@ -28,6 +27,7 @@ RUN apt-get update && apt-get install -y \
     python3.10-dev \
     python3-pip \
     python3.10-distutils \
+    python3.10-tk \
     && rm -rf /var/lib/apt/lists/*
 
 # Set python3.10 as default python
